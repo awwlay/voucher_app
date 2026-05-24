@@ -5,9 +5,11 @@
 pip install -r requirements.txt
 python app.py
 ```
+
 ## Features
 - Flask-Login authentication (login/register/logout)
 - Per-user orders and customers
 - Dashboard with filters and CRUD
+- Voucher print view
 - Analytics with `pandas`, `numpy`
 - SQLite local storage (`workshop.db`)

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12 col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h4 mb-3">Profile</h2>
+        <p class="mb-1"><strong>Username:</strong> {{ profile.username }}</p>
+        <p class="mb-1"><strong>User ID:</strong> {{ profile.id }}</p>
+        <p class="mb-4"><strong>Member Since:</strong> {{ profile.created_at[:10] }}</p>
+
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="border rounded p-3 bg-light h-100">
+              <div class="text-muted small">Orders</div>
+              <div class="h5 mb-0">{{ order_count }}</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="border rounded p-3 bg-light h-100">
+              <div class="text-muted small">Customers</div>
+              <div class="h5 mb-0">{{ customer_count }}</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="border rounded p-3 bg-light h-100">
+              <div class="text-muted small">Total Revenue</div>
+              <div class="h5 mb-0">{{ "{:,.0f}".format(total_revenue) }} MMK</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="border rounded p-3 bg-light h-100">
+              <div class="text-muted small">Outstanding Balance</div>
+              <div class="h5 mb-0">{{ "{:,.0f}".format(outstanding) }} MMK</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-8">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <h3 class="h5 mb-3">Update Account</h3>
+        <form method="post" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_type" value="account" />
+          <div class="col-12">
+            <label class="form-label">Username</label>
+            <input class="form-control" name="username" value="{{ profile.username }}" minlength="3" required />
+          </div>
+          <div class="col-12 d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" type="submit">Save Profile</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h3 class="h5 mb-3">Change Password</h3>
+        <form method="post" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_type" value="password" />
+          <div class="col-12 col-md-4">
+            <label class="form-label">Current Password</label>
+            <input class="form-control" type="password" name="current_password" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">New Password</label>
+            <input class="form-control" type="password" name="new_password" minlength="6" required />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">Confirm Password</label>
+            <input class="form-control" type="password" name="confirm_password" minlength="6" required />
+          </div>
+          <div class="col-12 d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" type="submit">Update Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <h2 class="h4 mb-3">{{ 'Edit Order' if order else 'New Order' }}</h2>
+    <form method="post" action="{{ url_for('save_order') }}" id="orderForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if order %}<input type="hidden" name="order_id" value="{{ order.id }}" />{% endif %}
+
+      <div class="row g-3">
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Voucher Number</label>
+          <input class="form-control" value="{{ suggested_voucher }}" readonly />
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Order Date</label>
+          <input class="form-control" type="date" name="order_date" value="{{ order.order_date if order else '' }}" required />
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Customer Name</label>
+          <input class="form-control" name="customer_name" value="{{ order.customer_name if order else '' }}" required />
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Phone Number</label>
+          <input class="form-control" name="phone_number" value="{{ order.phone_number if order else '' }}" required />
+        </div>
+        <div class="col-6 col-md-6 col-lg-4">
+          <label class="form-label">Status</label>
+          <select class="form-select" name="status">{% for s in statuses %}<option {% if (order and order.status==s) or (not order and s=='Pending' ) %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-6 col-md-6 col-lg-4">
+          <label class="form-label">Payment Status</label>
+          <select class="form-select" name="payment_status">{% for p in payment_statuses %}<option {% if (order and order.payment_status==p) or (not order and p=='Unpaid' ) %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Deposit</label>
+          <input class="form-control" id="deposit" name="deposit" type="number" step="0.01" value="{{ order.deposit if order else 0 }}" />
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Total Amount</label>
+          <input class="form-control" id="total_amount" readonly />
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Balance</label>
+          <input class="form-control" id="balance" readonly />
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" name="notes" rows="3">{{ order.notes if order else '' }}</textarea>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 class="h5 mb-0">Items</h3>
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addItem()">Add Item</button>
+      </div>
+
+      <div class="table-responsive">
+        <table id="itemTable" class="table table-bordered align-middle">
+          <thead class="table-light">
+            <tr><th>Item Name</th><th>Qty</th><th>Unit Price</th><th>Total</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <input type="hidden" name="items_json" id="items_json" />
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Save Order</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const initialItems = {{ (order["items"] if order else[]) | tojson }};
+  const tbody = document.querySelector('#itemTable tbody');
+
+  function recalc() {
+    let sum = 0;
+    document.querySelectorAll('.item-row').forEach(row => {
+      const qty = Number(row.querySelector('.qty').value || 0);
+      const price = Number(row.querySelector('.price').value || 0);
+      const total = qty * price;
+      row.querySelector('.line-total').textContent = total.toFixed(2);
+      sum += total;
+    });
+    const deposit = Number(document.querySelector('#deposit').value || 0);
+    document.querySelector('#total_amount').value = sum.toFixed(2);
+    document.querySelector('#balance').value = (sum - deposit).toFixed(2);
+  }
+
+  function addItem(item = { item_name: '', quantity: 1, unit_price: 0 }) {
+    const tr = document.createElement('tr');
+    tr.className = 'item-row';
+    tr.innerHTML = `
+      <td><input class="form-control name" value="${item.item_name || ''}" /></td>
+      <td><input class="form-control qty" type="number" min="1" value="${item.quantity || 1}" /></td>
+      <td><input class="form-control price" type="number" step="0.01" min="0" value="${item.unit_price || 0}" /></td>
+      <td><span class="line-total">0.00</span></td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); recalc();">Remove</button></td>
+    `;
+    tr.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
+    tbody.appendChild(tr);
+    recalc();
+  }
+
+  if (initialItems.length) {
+    initialItems.forEach(item => addItem(item));
+  } else {
+    addItem();
+  }
+
+  document.querySelector('#deposit').addEventListener('input', recalc);
+
+  document.querySelector('#orderForm').addEventListener('submit', () => {
+    const rows = [...document.querySelectorAll('.item-row')];
+    const items = rows.map(row => ({
+      item_name: row.querySelector('.name').value,
+      quantity: Number(row.querySelector('.qty').value || 0),
+      unit_price: Number(row.querySelector('.price').value || 0)
+    }));
+    document.querySelector('#items_json').value = JSON.stringify(items);
+  });
+
+  recalc();
+</script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h2 class="h4 mb-3">Analytics</h2>
+    <div class="row g-3">
+      <div class="col-6 col-lg-3">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="text-muted small">Total Orders</div>
+          <div class="h5 mb-0">{{ total_orders }}</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="text-muted small">Total Customers</div>
+          <div class="h5 mb-0">{{ total_customers }}</div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-3">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="text-muted small">Total Revenue</div>
+          <div class="h5 mb-0">{{ "{:,.0f}".format(total_revenue) }} MMK</div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-3">
+        <div class="border rounded p-3 h-100 bg-light">
+          <div class="text-muted small">Outstanding Balance</div>
+          <div class="h5 mb-0">{{ "{:,.0f}".format(outstanding) }} MMK</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Order Status Distribution</h3>
+    <div style="position: relative; height: 300px; width: 100%;">
+      <canvas id="statusChart" height="100"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Payment Status Distribution</h3>
+    <div style="position: relative; height: 300px; width: 100%;">
+      <canvas id="paymentChart" height="100"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+      <h3 class="h5 mb-0">Revenue Analysis</h3>
+
+      <div class="btn-group" role="group" aria-label="Revenue period switch">
+        <button id="btnMonthly" type="button" class="btn btn-sm btn-primary">Monthly</button>
+        <button id="btnYearly" type="button" class="btn btn-sm btn-outline-primary">Yearly</button>
+      </div>
+
+    </div>
+    <div style="position: relative; height: 300px; width: 100%;">
+      <canvas id="revenueChart" height="110"></canvas>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const statusLabels = {{ status_labels | tojson }};
+  const statusValues = {{ status_values | tojson }};
+  const paymentLabels = {{ payment_labels | tojson }};
+  const paymentValues = {{ payment_values | tojson }};
+  const monthlyLabels = {{ revenue_labels | tojson }};
+  const monthlyValues = {{ revenue_values | tojson }};
+  const yearlyLabels = {{ yearly_revenue_labels | tojson }};
+  const yearlyValues = {{ yearly_revenue_values | tojson }};
+
+  new Chart(document.getElementById('statusChart'), {
+    type: 'bar',
+    data: { labels: statusLabels, datasets: [{ label: 'Orders', data: statusValues, backgroundColor: '#0d6efd' }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  new Chart(document.getElementById('paymentChart'), {
+    type: 'doughnut',
+    data: { labels: paymentLabels, datasets: [{ data: paymentValues, backgroundColor: ['#dc3545', '#ffc107', '#198754', '#6c757d'] }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  const revenueChart = new Chart(document.getElementById('revenueChart'), {
+    type: 'line',
+    data: {
+      labels: monthlyLabels,
+      datasets: [{
+        label: 'Revenue (MMK)',
+        data: monthlyValues,
+        borderColor: '#198754',
+        backgroundColor: 'rgba(25,135,84,0.15)',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  const btnMonthly = document.getElementById('btnMonthly');
+  const btnYearly = document.getElementById('btnYearly');
+
+  function setMode(mode) {
+    if (mode === 'yearly') {
+      revenueChart.data.labels = yearlyLabels;
+      revenueChart.data.datasets[0].data = yearlyValues;
+      btnYearly.className = 'btn btn-sm btn-primary';
+      btnMonthly.className = 'btn btn-sm btn-outline-primary';
+    } else {
+      revenueChart.data.labels = monthlyLabels;
+      revenueChart.data.datasets[0].data = monthlyValues;
+      btnMonthly.className = 'btn btn-sm btn-primary';
+      btnYearly.className = 'btn btn-sm btn-outline-primary';
+    }
+    revenueChart.update();
+  }
+
+  btnMonthly.addEventListener('click', () => setMode('monthly'));
+  btnYearly.addEventListener('click', () => setMode('yearly'));
+</script>
+{% endblock %}

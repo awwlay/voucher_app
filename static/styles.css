@@ -1,0 +1,32 @@
+body {
+  min-height: 100vh;
+}
+
+.navbar-brand {
+  letter-spacing: 0.2px;
+}
+
+.chart-img {
+  width: 100%;
+  height: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+@media print {
+  .navbar,
+  .btn,
+  form {
+    display: none !important;
+  }
+
+  .card {
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
+      <div>
+        <h2 class="h4 mb-1">Furniture Workshop Voucher</h2>
+        <div class="text-muted small">Voucher: <strong>{{ order.voucher_number }}</strong> | Date: {{ order.order_date }}</div>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" onclick="window.print()">Print</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('edit_order', order_id=order.id) }}">Edit Order</a>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-6">
+        <div class="border rounded p-3 h-100">
+          <h3 class="h6 mb-2">Customer</h3>
+          <p class="mb-1">{{ order.customer_name }}</p>
+          <p class="mb-0 text-muted">{{ order.phone_number }}</p>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="border rounded p-3 h-100">
+          <h3 class="h6 mb-2">Status</h3>
+          <p class="mb-1">{{ order.status }}</p>
+          <p class="mb-0 text-muted">{{ order.payment_status }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-responsive mb-3">
+      <table class="table table-bordered table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in order["items"] %}
+          <tr>
+            <td>{{ i.item_name }}</td>
+            <td>{{ i.quantity }}</td>
+            <td>{{ "{:,.0f}".format(i.unit_price) }} MMK</td>
+            <td>{{ "{:,.0f}".format(i.total) }} MMK</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if order.notes %}
+    <div class="mb-3">
+      <h3 class="h6">Notes</h3>
+      <p class="mb-0">{{ order.notes }}</p>
+    </div>
+    {% endif %}
+
+    <div class="text-md-end">
+      <p class="mb-1">Subtotal: {{ "{:,.0f}".format(order.total_amount) }} MMK</p>
+      <p class="mb-1">Deposit: {{ "{:,.0f}".format(order.deposit) }} MMK</p>
+      <p class="mb-0 fw-bold">Balance: {{ "{:,.0f}".format(order.balance) }} MMK</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

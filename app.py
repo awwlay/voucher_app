@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
-from dotenv import load_dotenv
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,UTC
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 from flask import Flask, flash, g, redirect, render_template, request, session, url_for
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -23,6 +24,18 @@ from flask_login import (
     logout_user,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from forms import (
+    AccountForm,
+    DeleteForm,
+    LoginForm,
+    LogoutForm,
+    OrderForm,
+    PasswordForm,
+    RegisterForm,
+    PAYMENT_STATUSES,
+    STATUSES,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "workshop.db"
@@ -44,9 +57,8 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 login_manager.login_message_category = "error"
 login_manager.session_protection = "strong"
+csrf = CSRFProtect(app)
 
-STATUSES = ["Pending", "In Progress", "Ready", "Delivered", "Cancelled"]
-PAYMENT_STATUSES = ["Unpaid", "Partially Paid", "Paid"]
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_ATTEMPTS: dict[str, list[float]] = {}
@@ -214,7 +226,7 @@ def upsert_customer(user_id: int, name: str, phone_number: str) -> int:
             db.commit()
         return int(customer["id"])
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
     cur = db.execute(
         "INSERT INTO customers (user_id, name, phone_number, created_at) VALUES (?, ?, ?, ?)",
         (user_id, name, phone_number, now),
@@ -257,21 +269,6 @@ def fetch_order(order_id: int, user_id: int) -> dict[str, Any] | None:
     }
 
 
-def generate_csrf_token() -> str:
-    token = session.get("_csrf_token")
-    if not token:
-        token = secrets.token_urlsafe(32)
-        session["_csrf_token"] = token
-    return token
-
-
-def validate_csrf_token(token: str | None) -> bool:
-    session_token = session.get("_csrf_token")
-    return bool(
-        session_token and token and secrets.compare_digest(session_token, token)
-    )
-
-
 def get_login_rate_limit_key(username: str) -> str:
     forwarded_for = request.headers.get("X-Forwarded-For", "")
     client_ip = (
@@ -310,44 +307,68 @@ def clear_failed_logins(key: str) -> None:
     LOGIN_ATTEMPTS.pop(key, None)
 
 
-@app.before_request
-def protect_post_requests() -> Any | None:
-    if request.method != "POST":
-        return None
-
-    if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Your session expired or the form is invalid. Please try again.", "error")
-        if request.endpoint == "profile" and current_user.is_authenticated:
-            return redirect(url_for("profile"))
-        if request.endpoint == "register":
-            return redirect(url_for("register"))
-        if current_user.is_authenticated:
-            return redirect(url_for("index"))
-        return redirect(url_for("login"))
-    return None
+def normalize_filter_date(value: str) -> str:
+    try:
+        parsed = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except (AttributeError, ValueError):
+        return ""
+    return parsed.isoformat()
 
 
-app.jinja_env.globals["csrf_token"] = generate_csrf_token
+def flash_form_errors(form: Any) -> None:
+    errors = [message for messages in form.errors.values() for message in messages]
+    if errors:
+        flash("Please fix: " + "; ".join(errors[:5]), "error")
+
+
+def parse_date_value(value: str) -> datetime.date | None:
+    try:
+        return datetime.fromisoformat(value).date()
+    except (TypeError, ValueError):
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError, IndexError):
+            return None
+
+
+def parse_items_payload(value: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+    return payload if isinstance(payload, list) else []
+
+
+@app.context_processor
+def inject_forms() -> dict[str, Any]:
+    return {"logout_form": LogoutForm()}
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(_: CSRFError) -> Any:
+    flash("Your session expired or the form is invalid. Please try again.", "error")
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    return redirect(url_for("login"))
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login() -> str | Any:
+    form = LoginForm()
     init_db()
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
+    if form.validate_on_submit():
+        username = form.username.data.strip()
+        password = form.password.data
         rate_limit_key = get_login_rate_limit_key(username)
-
         if is_login_rate_limited(rate_limit_key):
             flash(
                 "Too many login attempts. Please wait 15 minutes and try again.",
                 "error",
             )
-            return render_template("login.html"), 429
-
+            return render_template("login.html", title="Login", form=form), 429
         db = get_db()
         row = db.execute(
             "SELECT id, username, password_hash FROM users WHERE username = ?",
@@ -356,7 +377,7 @@ def login() -> str | Any:
         if not row or not check_password_hash(row["password_hash"], password):
             record_failed_login(rate_limit_key)
             flash("Invalid username or password.", "error")
-            return render_template("login.html"), 401
+            return render_template("login.html", title="Login", form=form), 401
 
         clear_failed_logins(rate_limit_key)
         session.permanent = True
@@ -364,50 +385,50 @@ def login() -> str | Any:
         flash("Logged in successfully.", "success")
         return redirect(url_for("index"))
 
-    return render_template("login.html")
+    if request.method == "POST":
+        flash_form_errors(form)
+    return render_template("login.html", title="Login", form=form)
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register() -> str | Any:
+    form = RegisterForm()
     init_db()
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-
-        if len(username) < 3 or len(password) < 6:
-            flash(
-                "Username must be at least 3 chars and password at least 6 chars.",
-                "error",
-            )
-            return render_template("register.html")
-
+    if form.validate_on_submit():
+        username = form.username.data.strip()
+        password = form.password.data
         db = get_db()
         exists = db.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
         if exists:
             flash("Username already exists.", "error")
-            return render_template("register.html")
+            return render_template("register.html", title="Register", form=form)
 
         db.execute(
             "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, generate_password_hash(password), datetime.utcnow().isoformat()),
+            (username, generate_password_hash(password), datetime.now(UTC).isoformat()),
         )
         db.commit()
         flash("Registration successful. Please log in.", "success")
         return redirect(url_for("login"))
 
-    return render_template("register.html")
+    if request.method == "POST":
+        flash_form_errors(form)
+    return render_template("register.html", title="Register", form=form)
 
 
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout() -> Any:
+    form = LogoutForm()
+    if not form.validate_on_submit():
+        flash_form_errors(form)
+        return redirect(url_for("index"))
     logout_user()
-    session.pop("_csrf_token", None)
     flash("Logged out.", "success")
     return redirect(url_for("login"))
 
@@ -419,23 +440,26 @@ def profile() -> str | Any:
     db = get_db()
     user_id = int(current_user.id)
 
+    user_row = db.execute(
+        "SELECT id, username, password_hash, created_at FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not user_row:
+        logout_user()
+        flash("User account not found.", "error")
+        return redirect(url_for("login"))
+
+    account_form = AccountForm()
+    password_form = PasswordForm()
+    if request.method == "GET" or request.form.get("form_type", "").strip() != "account":
+        account_form.username.data = user_row["username"]
+
     if request.method == "POST":
         form_type = request.form.get("form_type", "").strip()
-        user_row = db.execute(
-            "SELECT id, username, password_hash, created_at FROM users WHERE id = ?",
-            (user_id,),
-        ).fetchone()
-
-        if not user_row:
-            logout_user()
-            flash("User account not found.", "error")
-            return redirect(url_for("login"))
 
         if form_type == "account":
-            new_username = request.form.get("username", "").strip()
-            if len(new_username) < 3:
-                flash("Username must be at least 3 characters.", "error")
-            else:
+            if account_form.validate_on_submit():
+                new_username = account_form.username.data.strip()
                 existing_user = db.execute(
                     "SELECT id FROM users WHERE username = ? AND id != ?",
                     (new_username, user_id),
@@ -450,41 +474,38 @@ def profile() -> str | Any:
                     db.commit()
                     login_user(User(id=user_id, username=new_username))
                     flash("Profile updated successfully.", "success")
+                    return redirect(url_for("profile"))
+            else:
+                flash_form_errors(account_form)
 
         elif form_type == "password":
-            current_password = request.form.get("current_password", "")
-            new_password = request.form.get("new_password", "")
-            confirm_password = request.form.get("confirm_password", "")
-
-            if not check_password_hash(user_row["password_hash"], current_password):
-                flash("Current password is incorrect.", "error")
-            elif len(new_password) < 6:
-                flash("New password must be at least 6 characters.", "error")
-            elif new_password != confirm_password:
-                flash("New password and confirmation do not match.", "error")
-            elif check_password_hash(user_row["password_hash"], new_password):
-                flash(
-                    "New password must be different from the current password.", "error"
-                )
+            if password_form.validate_on_submit():
+                if not check_password_hash(
+                    user_row["password_hash"], password_form.current_password.data
+                ):
+                    flash("Current password is incorrect.", "error")
+                elif check_password_hash(
+                    user_row["password_hash"], password_form.new_password.data
+                ):
+                    flash(
+                        "New password must be different from the current password.",
+                        "error",
+                    )
+                else:
+                    db.execute(
+                        "UPDATE users SET password_hash = ? WHERE id = ?",
+                        (
+                            generate_password_hash(password_form.new_password.data),
+                            user_id,
+                        ),
+                    )
+                    db.commit()
+                    flash("Password updated successfully.", "success")
+                    return redirect(url_for("profile"))
             else:
-                db.execute(
-                    "UPDATE users SET password_hash = ? WHERE id = ?",
-                    (generate_password_hash(new_password), user_id),
-                )
-                db.commit()
-                flash("Password updated successfully.", "success")
-
-        return redirect(url_for("profile"))
-
-    profile_row = db.execute(
-        "SELECT id, username, created_at FROM users WHERE id = ?",
-        (user_id,),
-    ).fetchone()
-
-    if not profile_row:
-        logout_user()
-        flash("User account not found.", "error")
-        return redirect(url_for("login"))
+                flash_form_errors(password_form)
+        else:
+            flash("Profile form is invalid.", "error")
 
     order_count = db.execute(
         "SELECT COUNT(*) AS c FROM orders WHERE user_id = ?",
@@ -505,11 +526,13 @@ def profile() -> str | Any:
 
     return render_template(
         "profile.html",
-        profile=profile_row,
+        profile=user_row,
         order_count=order_count,
         customer_count=customer_count,
         total_revenue=total_revenue,
         outstanding=outstanding,
+        account_form=account_form,
+        password_form=password_form,
     )
 
 
@@ -523,8 +546,13 @@ def index() -> str:
     search = request.args.get("search", "").strip()
     status = request.args.get("status", "All")
     payment = request.args.get("payment", "All")
-    start_date = request.args.get("start_date", "").strip()
-    end_date = request.args.get("end_date", "").strip()
+    start_date = normalize_filter_date(request.args.get("start_date", ""))
+    end_date = normalize_filter_date(request.args.get("end_date", ""))
+
+    if status not in ["All", *STATUSES]:
+        status = "All"
+    if payment not in ["All", *PAYMENT_STATUSES]:
+        payment = "All"
 
     conditions = ["o.user_id = ?"]
     params: list[Any] = [user_id]
@@ -575,6 +603,7 @@ def index() -> str:
         "index.html",
         orders=orders,
         customers=customers,
+        delete_form=DeleteForm(),
         statuses=STATUSES,
         payment_statuses=PAYMENT_STATUSES,
         filters={
@@ -702,12 +731,16 @@ def analytics() -> str:
 @app.route("/orders/new")
 @login_required
 def new_order() -> str:
+    form = OrderForm()
+    form.status.data = "Pending"
+    form.payment_status.data = "Unpaid"
+    form.deposit.data = 0
     return render_template(
         "order_form.html",
+        form=form,
         order=None,
-        statuses=STATUSES,
-        payment_statuses=PAYMENT_STATUSES,
         suggested_voucher=next_voucher_number(int(current_user.id)),
+        initial_items=[],
     )
 
 
@@ -719,12 +752,26 @@ def edit_order(order_id: int) -> str:
         flash("Order not found.", "error")
         return redirect(url_for("index"))
 
+    form = OrderForm(
+        data={
+            "order_id": order["id"],
+            "customer_name": order["customer_name"],
+            "phone_number": order["phone_number"],
+            "order_date": parse_date_value(order["order_date"]),
+            "status": order["status"],
+            "payment_status": order["payment_status"],
+            "deposit": order["deposit"],
+            "notes": order["notes"],
+        }
+    )
+    form.items_json.data = json.dumps(order["items"])
+
     return render_template(
         "order_form.html",
+        form=form,
         order=order,
-        statuses=STATUSES,
-        payment_statuses=PAYMENT_STATUSES,
         suggested_voucher=order["voucher_number"],
+        initial_items=order["items"],
     )
 
 
@@ -735,50 +782,65 @@ def save_order() -> Any:
     db = get_db()
     user_id = int(current_user.id)
 
-    order_id = request.form.get("order_id")
-    customer_name = request.form.get("customer_name", "").strip()
-    phone_number = request.form.get("phone_number", "").strip()
-    order_date = request.form.get("order_date", "").strip()
-    status = request.form.get("status", "Pending")
-    payment_status = request.form.get("payment_status", "Unpaid")
-    notes = request.form.get("notes", "").strip()
+    form = OrderForm()
+    if not form.validate_on_submit():
+        flash_form_errors(form)
+        order_id = None
+        if form.order_id.data:
+            try:
+                order_id = int(form.order_id.data)
+            except ValueError:
+                order_id = None
+        order = fetch_order(order_id, user_id) if order_id else None
+        suggested_voucher = order["voucher_number"] if order else next_voucher_number(user_id)
+        return render_template(
+            "order_form.html",
+            form=form,
+            order=order,
+            suggested_voucher=suggested_voucher,
+            initial_items=parse_items_payload(form.items_json.data),
+        ), 400
 
-    items_raw = request.form.get("items_json", "[]")
-    try:
-        items = json.loads(items_raw)
-    except json.JSONDecodeError:
-        items = []
+    order_id = None
+    if form.order_id.data:
+        try:
+            order_id = int(form.order_id.data)
+        except ValueError:
+            flash("Order ID is invalid.", "error")
+            return render_template(
+                "order_form.html",
+                form=form,
+                order=None,
+                suggested_voucher=next_voucher_number(user_id),
+                initial_items=parse_items_payload(form.items_json.data),
+            ), 400
 
-    clean_items = []
-    for item in items:
-        item_name = str(item.get("item_name", "")).strip()
-        quantity = int(item.get("quantity", 0) or 0)
-        unit_price = float(item.get("unit_price", 0) or 0)
-        if not item_name or quantity <= 0 or unit_price <= 0:
-            continue
-        clean_items.append(
-            {
-                "item_name": item_name,
-                "quantity": quantity,
-                "unit_price": unit_price,
-                "total": quantity * unit_price,
-            }
-        )
+    customer_name = form.customer_name.data.strip()
+    phone_number = form.phone_number.data.strip()
+    order_date = form.order_date.data.isoformat()
+    status = form.status.data
+    payment_status = form.payment_status.data
+    notes = (form.notes.data or "").strip()
+    clean_items = form.clean_items
+    deposit = float(form.deposit.data or 0)
+    total_amount = round(sum(item["total"] for item in clean_items), 2)
 
-    if not customer_name or not phone_number or not order_date or not clean_items:
-        flash("Please fill customer info and at least one valid item.", "error")
-        if order_id:
-            return redirect(url_for("edit_order", order_id=order_id))
-        return redirect(url_for("new_order"))
+    if deposit > total_amount:
+        form.deposit.errors.append("Deposit cannot be greater than the total amount.")
+        flash_form_errors(form)
+        order = fetch_order(order_id, user_id) if order_id else None
+        suggested_voucher = order["voucher_number"] if order else next_voucher_number(user_id)
+        return render_template(
+            "order_form.html",
+            form=form,
+            order=order,
+            suggested_voucher=suggested_voucher,
+            initial_items=parse_items_payload(form.items_json.data),
+        ), 400
 
-    total_amount = sum(item["total"] for item in clean_items)
-    deposit = float(request.form.get("deposit", 0) or 0)
-    if deposit < 0:
-        deposit = 0
-    balance = total_amount - deposit
-
+    balance = round(total_amount - deposit, 2)
     customer_id = upsert_customer(user_id, customer_name, phone_number)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(UTC).isoformat()
 
     if order_id:
         existing = db.execute(
@@ -856,6 +918,11 @@ def save_order() -> Any:
 @app.route("/orders/<int:order_id>/delete", methods=["POST"])
 @login_required
 def delete_order(order_id: int) -> Any:
+    form = DeleteForm()
+    if not form.validate_on_submit():
+        flash_form_errors(form)
+        return redirect(url_for("index"))
+
     db = get_db()
     db.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
     db.execute(

@@ -23,7 +23,7 @@
           <li class="nav-item"><a class="nav-link" href="{{ url_for('profile') }}">Profile</a></li>
           <li class="nav-item">
             <form method="post" action="{{ url_for('logout') }}" class="d-flex">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {{ logout_form.hidden_tag() }}
               <button type="submit" class="nav-link btn btn-link text-decoration-none">Logout ({{ current_user.username }})</button>
             </form>
           </li>

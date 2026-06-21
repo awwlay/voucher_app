@@ -44,14 +44,16 @@
       <div class="card-body">
         <h3 class="h5 mb-3">Update Account</h3>
         <form method="post" class="row g-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="form_type" value="account" />
+          {{ account_form.hidden_tag() }}
           <div class="col-12">
-            <label class="form-label">Username</label>
-            <input class="form-control" name="username" value="{{ profile.username }}" minlength="3" required />
+            {{ account_form.username.label(class="form-label") }}
+            {{ account_form.username(class="form-control" ~ (' is-invalid' if account_form.username.errors else ''), autocomplete="username") }}
+            {% for error in account_form.username.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
           </div>
           <div class="col-12 d-flex flex-wrap gap-2">
-            <button class="btn btn-primary" type="submit">Save Profile</button>
+            {{ account_form.submit_account(class="btn btn-primary") }}
           </div>
         </form>
       </div>
@@ -61,22 +63,30 @@
       <div class="card-body">
         <h3 class="h5 mb-3">Change Password</h3>
         <form method="post" class="row g-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="form_type" value="password" />
+          {{ password_form.hidden_tag() }}
           <div class="col-12 col-md-4">
-            <label class="form-label">Current Password</label>
-            <input class="form-control" type="password" name="current_password" required />
+            {{ password_form.current_password.label(class="form-label") }}
+            {{ password_form.current_password(class="form-control" ~ (' is-invalid' if password_form.current_password.errors else ''), autocomplete="current-password") }}
+            {% for error in password_form.current_password.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">New Password</label>
-            <input class="form-control" type="password" name="new_password" minlength="6" required />
+            {{ password_form.new_password.label(class="form-label") }}
+            {{ password_form.new_password(class="form-control" ~ (' is-invalid' if password_form.new_password.errors else ''), autocomplete="new-password") }}
+            {% for error in password_form.new_password.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Confirm Password</label>
-            <input class="form-control" type="password" name="confirm_password" minlength="6" required />
+            {{ password_form.confirm_password.label(class="form-label") }}
+            {{ password_form.confirm_password(class="form-control" ~ (' is-invalid' if password_form.confirm_password.errors else ''), autocomplete="new-password") }}
+            {% for error in password_form.confirm_password.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
           </div>
           <div class="col-12 d-flex flex-wrap gap-2">
-            <button class="btn btn-primary" type="submit">Update Password</button>
+            {{ password_form.submit_password(class="btn btn-primary") }}
           </div>
         </form>
       </div>
